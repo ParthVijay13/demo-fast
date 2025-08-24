@@ -5,33 +5,12 @@ import {
   MessageCircle, Download, MoreHorizontal, Menu, X, ChevronDown,
   ChevronsLeft, ChevronsRight
 } from 'lucide-react';
+import type { Order, OrderStatus } from '@/types/orders';
+import { useAppDispatch, useAppSelector } from '@/app/redux/store';
+import { selectOrdersState, fetchOrders, setSearch as setSearchAction, setStatus as setStatusAction, setPage as setPageAction, generateAwb as generateAwbThunk } from '@/app/redux/slices/ordersSlice';
+import { useEffect } from 'react';
 
-// --- TYPE DEFINITIONS ---
-type OrderStatus = 'pending' | 'ready-to-ship' | 'in-transit' | 'delivered' | 'out-for-delivery' | 'ndr' | 'rto-in-transit' | 'rto-delivered';
-
-interface Order {
-  id: string;
-  date: string;
-  time: string;
-  pickupAddress: string;
-  productDetails: string;
-  weight: string;
-  status: OrderStatus;
-  zone: string;
-  awbNumber?: string;
-}
-
-// --- MOCK DATA ---
-const mockOrders: Order[] = [
-  { id: 'ORD001', date: '25 Jun', time: '10:09 PM', pickupAddress: 'C-46 MARUTI BHAWAN, MAHESH NAGAR, JAIPUR - 302015', productDetails: 'Cement Grey Wide Leg Trousers', weight: '4.29 kg', status: 'pending', zone: 'Surface Zone B' },
-  { id: 'ORD002', date: '25 Jun', time: '08:36 PM', pickupAddress: 'Ajay (Dayalbagh) - 201001', productDetails: 'Aqua Ace Hyaluronic Acid Gel', weight: '0.45 kg', status: 'ready-to-ship', zone: 'Surface' },
-  { id: 'ORD003', date: '25 Jun', time: '07:52 PM', pickupAddress: 'Goshpara (Hyderabad) - 500001', productDetails: 'Black Wide Leg Cargo Jeans', weight: '0.80 kg', status: 'in-transit', zone: 'Surface Zone D2' },
-  { id: 'ORD004', date: '24 Jun', time: '02:15 PM', pickupAddress: 'Koramangala, Bangalore - 560034', productDetails: 'Wireless Bluetooth Earbuds', weight: '0.25 kg', status: 'delivered', zone: 'Air Zone A' },
-  { id: 'ORD005', date: '24 Jun', time: '11:00 AM', pickupAddress: 'Sector 62, Noida - 201309', productDetails: 'Ergonomic Office Chair', weight: '15.5 kg', status: 'out-for-delivery', zone: 'Surface Zone C' },
-  { id: 'ORD006', date: '23 Jun', time: '09:30 PM', pickupAddress: 'Bandra West, Mumbai - 400050', productDetails: 'Leather Biker Jacket', weight: '1.2 kg', status: 'ndr', zone: 'Surface Zone A' },
-  { id: 'ORD007', date: '22 Jun', time: '05:00 PM', pickupAddress: 'T. Nagar, Chennai - 600017', productDetails: 'Silk Saree with Blouse Piece', weight: '0.9 kg', status: 'rto-in-transit', zone: 'Air Zone B' },
-  { id: 'ORD008', date: '21 Jun', time: '01:20 PM', pickupAddress: 'Salt Lake, Kolkata - 700091', productDetails: 'Set of 6 Ceramic Mugs', weight: '2.1 kg', status: 'rto-delivered', zone: 'Surface Zone E' },
-];
+// Data for dropdown filters (static for now, can be sourced via API later)
 
 const pickupLocations = ["Jaipur-MaheshNagar-302015", "Bangalore-Koramangala-560034", "Mumbai-Bandra-400050"];
 const transportModes = ["Surface", "Air"];
@@ -84,7 +63,8 @@ const Sidebar: React.FC<{
   setOpen: (open: boolean) => void;
   selectedStatus: OrderStatus | 'all-shipments';
   setSelectedStatus: (status: OrderStatus | 'all-shipments') => void;
-}> = ({ isOpen, setOpen, selectedStatus, setSelectedStatus }) => {
+  statusCounts: Record<OrderStatus | 'all-shipments', number>;
+}> = ({ isOpen, setOpen, selectedStatus, setSelectedStatus, statusCounts }) => {
   const statusItems = [
     { key: 'all-shipments', label: 'All Shipments' },
     { key: 'pending', label: 'Pending' }, { key: 'ready-to-ship', label: 'Ready To Ship' },
@@ -107,19 +87,16 @@ const Sidebar: React.FC<{
           </div>
           <h3 className="text-sm font-semibold text-gray-900 mb-3 tracking-wider uppercase">ORDER STATUS</h3>
           <div className="space-y-1">
-            {statusItems.map((item) => {
-              const count = item.key === 'all-shipments' ? mockOrders.length : mockOrders.filter(o => o.status === item.key).length;
-              return (
-                <button key={item.key} onClick={() => {
-                  setSelectedStatus(item.key as OrderStatus | 'all-shipments');
-                  if (window.innerWidth < 768) setOpen(false);
-                }}
-                  className={`w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors ${selectedStatus === item.key ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-100'}`}>
-                  <span>{item.label}</span>
-                  <span className={`text-xs px-2 py-0.5 rounded-full ${selectedStatus === item.key ? 'bg-blue-200 text-blue-800' : 'bg-gray-200 text-gray-700'}`}>{count}</span>
-                </button>
-              )
-            })}
+            {statusItems.map((item) => (
+              <button key={item.key} onClick={() => {
+                setSelectedStatus(item.key as OrderStatus | 'all-shipments');
+                if (window.innerWidth < 768) setOpen(false);
+              }}
+                className={`w-full flex items-center justify-between px-3 py-2 text-sm rounded-lg transition-colors ${selectedStatus === item.key ? 'bg-blue-50 text-blue-700 font-semibold' : 'text-gray-600 hover:bg-gray-100'}`}>
+                <span>{item.label}</span>
+                <span className={`text-xs px-2 py-0.5 rounded-full ${selectedStatus === item.key ? 'bg-blue-200 text-blue-800' : 'bg-gray-200 text-gray-700'}`}>{statusCounts[item.key as keyof typeof statusCounts] ?? 0}</span>
+              </button>
+            ))}
           </div>
         </div>
       </aside>
@@ -176,7 +153,9 @@ const OrderRow: React.FC<{
   order: Order;
   isSelected: boolean;
   onSelect: (orderId: string) => void;
-}> = ({ order, isSelected, onSelect }) => {
+  onGenerateAwb: (orderId: string) => Promise<void>;
+  generating: boolean;
+}> = ({ order, isSelected, onSelect, onGenerateAwb, generating }) => {
   const statusDetails = getStatusDetails(order.status);
   return (
     <tr className="hover:bg-gray-50 border-b">
@@ -188,54 +167,70 @@ const OrderRow: React.FC<{
       <td className="px-6 py-4 whitespace-nowrap"><div className="text-sm text-gray-900">{order.productDetails}</div><div className="text-xs text-gray-500">SKU: GENERIC-001</div></td>
       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-700">{order.weight}</td>
       <td className="px-6 py-4 whitespace-nowrap"><span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${statusDetails.color}`}>{statusDetails.label}</span></td>
-      <td className="px-6 py-4 whitespace-nowrap text-right"><div className="flex items-center space-x-3"><button className="px-3 py-1.5 text-xs font-semibold text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50 transition-colors">Get AWB</button><button className="text-gray-400 hover:text-gray-600"><MoreHorizontal className="w-5 h-5" /></button></div></td>
+      <td className="px-6 py-4 whitespace-nowrap text-right">
+        <div className="flex items-center space-x-3">
+          {order.awbNumber ? (
+            <span className="px-3 py-1.5 text-xs font-semibold text-green-700 border border-green-600 rounded-md bg-green-50">{order.awbNumber}</span>
+          ) : (
+            <button
+              className="px-3 py-1.5 text-xs font-semibold text-blue-600 border border-blue-600 rounded-md hover:bg-blue-50 transition-colors disabled:opacity-50"
+              onClick={() => onGenerateAwb(order.id)}
+              disabled={generating}
+            >
+              {generating ? 'Generating…' : 'Get AWB'}
+            </button>
+          )}
+          <button className="text-gray-400 hover:text-gray-600"><MoreHorizontal className="w-5 h-5" /></button>
+        </div>
+      </td>
     </tr>
   );
 };
 
 const Pagination: React.FC<{
-  filteredCount: number;
+  page: number;
+  pageSize: number;
   totalCount: number;
-}> = ({ filteredCount, totalCount }) => (
-  <div className="px-4 py-3 border-t flex flex-col sm:flex-row items-center justify-between">
-    <div className="text-sm text-gray-600 mb-2 sm:mb-0">
-      Showing <span className="font-medium">1</span> to <span className="font-medium">{filteredCount}</span> of <span className="font-medium">{totalCount}</span> results
+  onPrev: () => void;
+  onNext: () => void;
+}> = ({ page, pageSize, totalCount, onPrev, onNext }) => {
+  const start = totalCount === 0 ? 0 : (page - 1) * pageSize + 1;
+  const end = Math.min(page * pageSize, totalCount);
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  return (
+    <div className="px-4 py-3 border-t flex flex-col sm:flex-row items-center justify-between">
+      <div className="text-sm text-gray-600 mb-2 sm:mb-0">
+        Showing <span className="font-medium">{start}</span> to <span className="font-medium">{end}</span> of <span className="font-medium">{totalCount}</span> results
+      </div>
+      <div className="flex items-center space-x-1">
+        <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-md disabled:opacity-50" onClick={onPrev} disabled={page <= 1}><ChevronsLeft className="w-4 h-4" /></button>
+        <span className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md">{page}</span>
+        <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-md" onClick={onNext} disabled={page >= totalPages}><ChevronsRight className="w-4 h-4" /></button>
+      </div>
     </div>
-    <div className="flex items-center space-x-1">
-      <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-md disabled:opacity-50" disabled><ChevronsLeft className="w-4 h-4" /></button>
-      <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-md disabled:opacity-50" disabled><ChevronDown className="w-4 h-4 -rotate-90" /></button>
-      <span className="px-3 py-1 text-sm bg-blue-600 text-white rounded-md">1</span>
-      <button className="px-3 py-1 text-sm text-gray-600 hover:bg-gray-100 rounded-md">2</button>
-      <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-md"><ChevronDown className="w-4 h-4 rotate-90" /></button>
-      <button className="p-2 text-gray-500 hover:bg-gray-100 rounded-md"><ChevronsRight className="w-4 h-4" /></button>
-    </div>
-  </div>
-);
+  );
+};
 
 // --- MAIN COMPONENT ---
 const OrderManagementPortal: React.FC = () => {
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedStatus, setSelectedStatus] = useState<OrderStatus | 'all-shipments'>('all-shipments');
+  const dispatch = useAppDispatch();
+  const ordersState = useAppSelector(selectOrdersState);
+  const { items: orders, pagination, statusCounts, loading, error, filters, generatingAwbId } = ordersState;
+
   const [selectedOrders, setSelectedOrders] = useState<string[]>([]);
   const [isSidebarOpen, setSidebarOpen] = useState(false);
 
-  // --- FILTERING LOGIC ---
-  const filteredOrders = mockOrders.filter(order => {
-    const statusMatch = selectedStatus === 'all-shipments' || order.status === selectedStatus;
-    const searchMatch = searchQuery.trim() === '' ||
-      order.id.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.productDetails.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      order.pickupAddress.toLowerCase().includes(searchQuery.toLowerCase());
-    return statusMatch && searchMatch;
-  });
+  useEffect(() => {
+    dispatch(fetchOrders());
+  }, [dispatch, filters.search, filters.status, pagination.page, pagination.pageSize]);
 
   const handleSelectAll = useCallback((event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.checked) {
-      setSelectedOrders(filteredOrders.map(o => o.id));
+      setSelectedOrders(orders.map(o => o.id));
     } else {
       setSelectedOrders([]);
     }
-  }, [filteredOrders]);
+  }, [orders]);
 
   const handleSelectOrder = useCallback((orderId: string) => {
     setSelectedOrders(prev =>
@@ -243,14 +238,19 @@ const OrderManagementPortal: React.FC = () => {
     );
   }, []);
 
+  const handleGenerateAwb = useCallback(async (orderId: string) => {
+    await dispatch(generateAwbThunk(orderId));
+  }, [dispatch]);
+
   return (
     <div className="min-h-screen bg-gray-50 text-gray-900">
       <div className="flex">
         <Sidebar
           isOpen={isSidebarOpen}
           setOpen={setSidebarOpen}
-          selectedStatus={selectedStatus}
-          setSelectedStatus={setSelectedStatus}
+          selectedStatus={filters.status}
+          setSelectedStatus={(s) => dispatch(setStatusAction(s))}
+          statusCounts={statusCounts}
         />
         <div className="flex-1 flex flex-col w-0">
           <Header setSidebarOpen={setSidebarOpen} />
@@ -258,17 +258,22 @@ const OrderManagementPortal: React.FC = () => {
           <main className="flex-1 p-4 sm:p-6">
             <div className="bg-white rounded-lg shadow-sm">
               <FilterBar
-                searchQuery={searchQuery}
-                setSearchQuery={setSearchQuery}
-                selectedStatus={selectedStatus}
+                searchQuery={filters.search}
+                setSearchQuery={(q) => dispatch(setSearchAction(q))}
+                selectedStatus={filters.status}
               />
+              {error && (
+                <div className="mx-4 my-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                  {error}
+                </div>
+              )}
 
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead className="bg-gray-50 border-b">
                     <tr>
                       <th className="px-6 py-3 text-left">
-                        <input type="checkbox" onChange={handleSelectAll} checked={filteredOrders.length > 0 && selectedOrders.length === filteredOrders.length} className="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500" />
+                        <input type="checkbox" onChange={handleSelectAll} checked={orders.length > 0 && selectedOrders.length === orders.length} className="rounded border-gray-300 text-blue-600 shadow-sm focus:ring-blue-500" />
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Order Details</th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Pickup Address</th>
@@ -279,8 +284,29 @@ const OrderManagementPortal: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="bg-white divide-y divide-gray-200">
-                    {filteredOrders.length > 0 ? (
-                      filteredOrders.map((order) => <OrderRow key={order.id} order={order} isSelected={selectedOrders.includes(order.id)} onSelect={handleSelectOrder} />)
+                    {loading ? (
+                      <tr>
+                        <td colSpan={7} className="text-center py-12">
+                          <div className="inline-flex items-center text-gray-600">
+                            <svg className="animate-spin -ml-1 mr-3 h-5 w-5 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z"></path>
+                            </svg>
+                            Loading orders…
+                          </div>
+                        </td>
+                      </tr>
+                    ) : orders.length > 0 ? (
+                      orders.map((order) => (
+                        <OrderRow
+                          key={order.id}
+                          order={order}
+                          isSelected={selectedOrders.includes(order.id)}
+                          onSelect={handleSelectOrder}
+                          onGenerateAwb={handleGenerateAwb}
+                          generating={generatingAwbId === order.id}
+                        />
+                      ))
                     ) : (
                       <tr>
                         <td colSpan={7} className="text-center py-16">
@@ -291,7 +317,13 @@ const OrderManagementPortal: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-              <Pagination filteredCount={filteredOrders.length} totalCount={mockOrders.length} />
+              <Pagination
+                page={pagination.page}
+                pageSize={pagination.pageSize}
+                totalCount={pagination.total}
+                onPrev={() => dispatch(setPageAction(Math.max(1, pagination.page - 1)))}
+                onNext={() => dispatch(setPageAction(pagination.page + 1))}
+              />
             </div>
           </main>
         </div>

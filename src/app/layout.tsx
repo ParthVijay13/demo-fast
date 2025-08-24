@@ -4,6 +4,7 @@ import './globals.css';
 import { SidebarProvider } from '@/context/SidebarContext';
 import { ThemeProvider } from '@/context/ThemeContext';
 import { AuthProvider } from '@/context/AuthContext';
+import Providers from './providers';
 // import ProtectedRoute from '@/components/ProtectedRoute';
 const outfit = Outfit({
   subsets: ["latin"],
@@ -21,7 +22,9 @@ export default function RootLayout({
         {/* <AuthProvider> */}
         
         <ThemeProvider>
-          <SidebarProvider>{children}</SidebarProvider>
+          <Providers>
+            <SidebarProvider>{children}</SidebarProvider>
+          </Providers>
         </ThemeProvider>
         
         {/* </AuthProvider> */}

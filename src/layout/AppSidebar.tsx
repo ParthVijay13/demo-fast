@@ -16,8 +16,9 @@ import {
   // Support,
   Tools,
   Tracking
- 
+
 } from "../icons/index";
+import { AlertCircle, MessageCircle, FileText, BarChart, Info } from "lucide-react";
 
 
 type NavItem = {
@@ -35,15 +36,18 @@ const allNavItems: NavItem[] = [
     name: "Dashboard",
     path:"/",
     tag:"dashboard"
-
-    // subItems: [{ name: "orders", path: "/", pro: false }],
   },
-  // {
-  //   icon: <Returns />,
-  //   name: "Returns",
-  //   path: "/returns",
-  //   tag:"tools"
-  // },
+  {
+    icon: <Orders />,
+    name: "Orders & Pickups",
+    tag:"orders",
+    subItems: [
+      { name: "Forward Orders", path: "/orders", pro: false },
+      { name: "Reverse Orders", path: "/orders/reverse", pro: false },
+      { name: "Pickup Requests", path: "/orders/pickup-requests", pro: false }
+    ],
+  },
+  
   {
     icon: <Tools />,
     name: "Tools",
@@ -51,35 +55,6 @@ const allNavItems: NavItem[] = [
     tag:"tools",
     subItems: [{ name: "Rate Calculator", path:"/tools/shippingcalculator", pro: false },{ name: "Pincode Serviceability", path:"/tools/pincodeserviceability", pro: false }],
   },
-
-  
-
-  // {
-  //   name: "Integrations",
-  //   icon: <Integrations />,
-  //   // subItems: [{ name: "Form Elements", path: "/form-elements", pro: false }],
-  //   path:"/integrations"
-  // },
-
-  
-  {
-    icon: <Orders />,
-    name: "Orders",
-    path: "/orders",
-    tag:"orders"
-  },
-  // {
-  //   icon: <Support />,
-  //   name: "Support",
-  //   path: "/support",
-  //   tag:"support"
-  // },
-  // {
-  //   icon: <Finance  />,
-  //   name: "Finance",
-  //   path: "/finance",
-  //   tag:"finance"
-  // },
   {
     icon: <Tracking/>,
     name: "Tracking",
